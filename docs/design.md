@@ -38,4 +38,6 @@ The first selector implementation is in `core/brain`. It is transport
 agnostic so callers can supply an authorized probe implementation without
 coupling endpoint policy to packet handling. Probes run concurrently under a
 bounded worker limit (default four, maximum thirty-two) so health checks do
-not create an unbounded burst of traffic or goroutines.
+not create an unbounded burst of traffic or goroutines. Endpoint count and
+field sizes are bounded at construction time, and status reports distinguish a
+currently healthy endpoint from one that is merely eligible after backoff.

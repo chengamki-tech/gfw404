@@ -71,12 +71,30 @@ func TestSelectorProbeAllRecordsResults(t *testing.T) {
 }
 
 func TestSelectorRejectsInvalidEndpoints(t *testing.T) {
-	_, err := NewSelector([]Endpoint{{ID: "", Address: "a"}}, Options{})
+	_, err := NewSelector(nil, Options{})
+	require.EqualError(t, err, "at least one endpoint is required")
+	_, err = NewSelector([]Endpoint{{ID: "", Address: "a"}}, Options{})
 	require.EqualError(t, err, "endpoint id is required")
 	_, err = NewSelector([]Endpoint{{ID: "a", Address: ""}}, Options{})
 	require.EqualError(t, err, "endpoint address is required")
 	_, err = NewSelector([]Endpoint{{ID: "a", Address: "a"}, {ID: "a", Address: "b"}}, Options{})
 	require.EqualError(t, err, "duplicate endpoint id \"a\"")
+}
+
+func TestSelectorRejectsOversizedEndpointSet(t *testing.T) {
+	endpoints := make([]Endpoint, maxEndpoints+1)
+	for i := range endpoints {
+		endpoints[i] = Endpoint{ID: string(rune(i + 1)), Address: "example:443"}
+	}
+	_, err := NewSelector(endpoints, Options{})
+	require.EqualError(t, err, "too many endpoints: maximum is 1024")
+}
+
+func TestSelectorRejectsOversizedEndpointFields(t *testing.T) {
+	_, err := NewSelector([]Endpoint{{ID: string(make([]byte, maxEndpointIDLength+1)), Address: "a"}}, Options{})
+	require.EqualError(t, err, "endpoint id is too long: maximum is 128 bytes")
+	_, err = NewSelector([]Endpoint{{ID: "a", Address: string(make([]byte, maxEndpointAddrLength+1))}}, Options{})
+	require.EqualError(t, err, "endpoint address is too long: maximum is 2048 bytes")
 }
 
 func TestSelectorUsesStableIDTieBreak(t *testing.T) {

@@ -61,9 +61,18 @@ type ProbeSummary struct {
 const (
 	defaultProbeConcurrency = 4
 	maxProbeConcurrency     = 32
+	maxEndpoints            = 1024
+	maxEndpointIDLength     = 128
+	maxEndpointAddrLength   = 2048
 )
 
 func NewSelector(endpoints []Endpoint, options Options) (*Selector, error) {
+	if len(endpoints) == 0 {
+		return nil, errors.New("at least one endpoint is required")
+	}
+	if len(endpoints) > maxEndpoints {
+		return nil, fmt.Errorf("too many endpoints: maximum is %d", maxEndpoints)
+	}
 	if options.FailureThreshold == 0 {
 		options.FailureThreshold = 3
 	}
@@ -83,8 +92,14 @@ func NewSelector(endpoints []Endpoint, options Options) (*Selector, error) {
 		if endpoint.ID == "" {
 			return nil, errors.New("endpoint id is required")
 		}
+		if len(endpoint.ID) > maxEndpointIDLength {
+			return nil, fmt.Errorf("endpoint id is too long: maximum is %d bytes", maxEndpointIDLength)
+		}
 		if endpoint.Address == "" {
 			return nil, errors.New("endpoint address is required")
+		}
+		if len(endpoint.Address) > maxEndpointAddrLength {
+			return nil, fmt.Errorf("endpoint address is too long: maximum is %d bytes", maxEndpointAddrLength)
 		}
 		if _, ok := s.endpoints[endpoint.ID]; ok {
 			return nil, fmt.Errorf("duplicate endpoint id %q", endpoint.ID)
@@ -187,6 +202,7 @@ func (s *Selector) ProbeAll(ctx context.Context, probe Probe, now time.Time) Pro
 		endpoints = append(endpoints, state.Endpoint)
 	}
 	s.mu.RUnlock()
+	sort.Slice(endpoints, func(i, j int) bool { return endpoints[i].ID < endpoints[j].ID })
 	workerCount := min(s.options.MaxConcurrentProbes, len(endpoints))
 	if workerCount == 0 {
 		return ProbeSummary{}
@@ -231,6 +247,7 @@ type EndpointStatus struct {
 	Endpoint
 	RTT      time.Duration
 	Healthy  bool
+	Eligible bool
 	Failures uint
 	RetryAt  time.Time
 }
@@ -243,7 +260,8 @@ func (s *Selector) Snapshot(now time.Time) []EndpointStatus {
 		result = append(result, EndpointStatus{
 			Endpoint: state.Endpoint,
 			RTT:      state.RTT,
-			Healthy:  state.Healthy || now.After(state.RetryAt),
+			Healthy:  state.Healthy,
+			Eligible: state.Healthy || !now.Before(state.RetryAt),
 			Failures: state.Failures,
 			RetryAt:  state.RetryAt,
 		})

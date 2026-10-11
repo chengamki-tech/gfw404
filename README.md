@@ -4,6 +4,10 @@ This checkout also contains the opt-in `gfw404 Ultra` security/performance
 profile. See [GFW404_ULTRA.md](GFW404_ULTRA.md). It preserves the upstream
 wire protocol and does not provide traffic camouflage or DPI-evasion features.
 
+Architecture and operational boundaries are documented in
+[`docs/design.md`](docs/design.md), [`docs/threat-model.md`](docs/threat-model.md),
+and [`docs/roadmap.md`](docs/roadmap.md).
+
 [![License][1]][2] [![Release][3]][4] [![Telegram][5]][6] [![Discussions][7]][8]
 
 [1]: https://img.shields.io/badge/license-MIT-blue

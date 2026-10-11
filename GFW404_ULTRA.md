@@ -54,6 +54,10 @@ Use the benchmark harness in `benchmarks/` and compare an unchanged upstream
 build with the profile under the same CPU, route, MTU, latency, loss, and
 server bandwidth conditions.
 
+The endpoint-selection core in `core/brain` accepts only operator-provided
+endpoints and records bounded health state; it does not scan networks or
+discover alternate ports.
+
 ## Explicit non-goals
 
 This project does not implement traffic camouflage, protocol impersonation,

@@ -8,7 +8,9 @@
 
 ## v0.2.0 — reliability
 
-- `404-Brain` health-probe interface for explicitly configured endpoints.
+- `404-Brain` selector core for explicitly configured endpoints (implemented in
+  `core/brain`).
+- Authenticated health-probe adapter around the selector.
 - Bounded exponential backoff with jitter for reconnect attempts.
 - Endpoint scoring from recent RTT, loss, and successful handshakes.
 - Metrics for reconnect reason, handshake latency, and route changes.

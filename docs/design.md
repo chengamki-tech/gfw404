@@ -36,4 +36,6 @@ be unrelated websites.
 
 The first selector implementation is in `core/brain`. It is transport
 agnostic so callers can supply an authorized probe implementation without
-coupling endpoint policy to packet handling.
+coupling endpoint policy to packet handling. Probes run concurrently under a
+bounded worker limit (default four, maximum thirty-two) so health checks do
+not create an unbounded burst of traffic or goroutines.

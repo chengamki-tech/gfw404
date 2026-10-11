@@ -56,7 +56,8 @@ server bandwidth conditions.
 
 The endpoint-selection core in `core/brain` accepts only operator-provided
 endpoints and records bounded health state; it does not scan networks or
-discover alternate ports.
+discover alternate ports. Health probes use a bounded worker pool so a large
+configured endpoint set cannot create an unbounded probe burst.
 
 ## Explicit non-goals
 

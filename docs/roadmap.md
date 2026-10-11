@@ -10,6 +10,7 @@
 
 - `404-Brain` selector core for explicitly configured endpoints (implemented in
   `core/brain`).
+- Bounded concurrent health probes with cancellation support.
 - Authenticated health-probe adapter around the selector.
 - Bounded exponential backoff with jitter for reconnect attempts.
 - Endpoint scoring from recent RTT, loss, and successful handshakes.

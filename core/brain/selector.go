@@ -9,6 +9,7 @@ import (
 	"math"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -20,10 +21,11 @@ type Endpoint struct {
 }
 
 type Options struct {
-	FailureThreshold uint
-	BackoffBase      time.Duration
-	BackoffMax       time.Duration
-	Jitter           func(time.Duration) time.Duration
+	FailureThreshold    uint
+	BackoffBase         time.Duration
+	BackoffMax          time.Duration
+	Jitter              func(time.Duration) time.Duration
+	MaxConcurrentProbes int
 }
 
 type endpointState struct {
@@ -56,6 +58,11 @@ type ProbeSummary struct {
 	Healthy int
 }
 
+const (
+	defaultProbeConcurrency = 4
+	maxProbeConcurrency     = 32
+)
+
 func NewSelector(endpoints []Endpoint, options Options) (*Selector, error) {
 	if options.FailureThreshold == 0 {
 		options.FailureThreshold = 3
@@ -65,6 +72,11 @@ func NewSelector(endpoints []Endpoint, options Options) (*Selector, error) {
 	}
 	if options.BackoffMax < options.BackoffBase {
 		options.BackoffMax = 30 * time.Second
+	}
+	if options.MaxConcurrentProbes <= 0 {
+		options.MaxConcurrentProbes = defaultProbeConcurrency
+	} else if options.MaxConcurrentProbes > maxProbeConcurrency {
+		options.MaxConcurrentProbes = maxProbeConcurrency
 	}
 	s := &Selector{options: options, endpoints: make(map[string]*endpointState, len(endpoints))}
 	for _, endpoint := range endpoints {
@@ -169,24 +181,50 @@ func (s *Selector) RecordFailure(id string, now time.Time) error {
 }
 
 func (s *Selector) ProbeAll(ctx context.Context, probe Probe, now time.Time) ProbeSummary {
-	summary := ProbeSummary{}
 	s.mu.RLock()
 	endpoints := make([]Endpoint, 0, len(s.endpoints))
 	for _, state := range s.endpoints {
 		endpoints = append(endpoints, state.Endpoint)
 	}
 	s.mu.RUnlock()
-	for _, endpoint := range endpoints {
-		summary.Checked++
-		rtt, err := probe.Probe(ctx, endpoint)
-		if err != nil {
-			_ = s.RecordFailure(endpoint.ID, now)
-			continue
-		}
-		summary.Healthy++
-		_ = s.RecordSuccess(endpoint.ID, rtt, now)
+	workerCount := min(s.options.MaxConcurrentProbes, len(endpoints))
+	if workerCount == 0 {
+		return ProbeSummary{}
 	}
-	return summary
+	var checked atomic.Int64
+	var healthy atomic.Int64
+	jobs := make(chan Endpoint)
+	var workers sync.WaitGroup
+	for range workerCount {
+		workers.Go(func() {
+			for endpoint := range jobs {
+				if ctx.Err() != nil {
+					continue
+				}
+				checked.Add(1)
+				rtt, err := probe.Probe(ctx, endpoint)
+				if err != nil {
+					if ctx.Err() == nil {
+						_ = s.RecordFailure(endpoint.ID, now)
+					}
+					continue
+				}
+				healthy.Add(1)
+				_ = s.RecordSuccess(endpoint.ID, rtt, now)
+			}
+		})
+	}
+sendLoop:
+	for _, endpoint := range endpoints {
+		select {
+		case jobs <- endpoint:
+		case <-ctx.Done():
+			break sendLoop
+		}
+	}
+	close(jobs)
+	workers.Wait()
+	return ProbeSummary{Checked: int(checked.Load()), Healthy: int(healthy.Load())}
 }
 
 type EndpointStatus struct {

@@ -3,6 +3,7 @@ package brain
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -107,4 +108,31 @@ func TestSelectorClampsJitter(t *testing.T) {
 		}
 	}
 	require.Equal(t, now.Add(2*time.Second), a.RetryAt)
+}
+
+func TestSelectorProbeConcurrencyIsBounded(t *testing.T) {
+	endpoints := make([]Endpoint, 8)
+	for i := range endpoints {
+		endpoints[i] = Endpoint{ID: string(rune('a' + i)), Address: "example:443"}
+	}
+	s, err := NewSelector(endpoints, Options{MaxConcurrentProbes: 2})
+	require.NoError(t, err)
+	var active, maxActive atomic.Int32
+	probe := ProbeFunc(func(ctx context.Context, endpoint Endpoint) (time.Duration, error) {
+		current := active.Add(1)
+		for {
+			old := maxActive.Load()
+			if current <= old || maxActive.CompareAndSwap(old, current) {
+				break
+			}
+		}
+		time.Sleep(time.Millisecond)
+		active.Add(-1)
+		return time.Millisecond, nil
+	})
+
+	summary := s.ProbeAll(context.Background(), probe, time.Unix(300, 0))
+	require.Equal(t, 8, summary.Checked)
+	require.Equal(t, 8, summary.Healthy)
+	require.LessOrEqual(t, maxActive.Load(), int32(2))
 }

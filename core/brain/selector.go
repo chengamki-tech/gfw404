@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-var errNoHealthyEndpoints = errors.New("no healthy endpoints")
+var ErrNoHealthyEndpoints = errors.New("no healthy endpoints")
 
 type Endpoint struct {
 	ID      string
@@ -96,10 +96,14 @@ func (s *Selector) Pick(now time.Time) (Endpoint, error) {
 		states = append(states, state)
 	}
 	if len(states) == 0 {
-		return Endpoint{}, errNoHealthyEndpoints
+		return Endpoint{}, ErrNoHealthyEndpoints
 	}
 	sort.SliceStable(states, func(i, j int) bool {
-		return selectionScore(states[i]) < selectionScore(states[j])
+		left, right := selectionScore(states[i]), selectionScore(states[j])
+		if left == right {
+			return states[i].ID < states[j].ID
+		}
+		return left < right
 	})
 	return states[0].Endpoint, nil
 }
@@ -153,6 +157,11 @@ func (s *Selector) RecordFailure(id string, now time.Time) error {
 		}
 		if s.options.Jitter != nil {
 			backoff = s.options.Jitter(backoff)
+		}
+		if backoff < 0 {
+			backoff = 0
+		} else if backoff > s.options.BackoffMax {
+			backoff = s.options.BackoffMax
 		}
 		state.RetryAt = now.Add(backoff)
 	}

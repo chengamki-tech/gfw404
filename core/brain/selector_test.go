@@ -77,3 +77,34 @@ func TestSelectorRejectsInvalidEndpoints(t *testing.T) {
 	_, err = NewSelector([]Endpoint{{ID: "a", Address: "a"}, {ID: "a", Address: "b"}}, Options{})
 	require.EqualError(t, err, "duplicate endpoint id \"a\"")
 }
+
+func TestSelectorUsesStableIDTieBreak(t *testing.T) {
+	s, err := NewSelector([]Endpoint{
+		{ID: "z", Address: "z.example:443"},
+		{ID: "a", Address: "a.example:443"},
+	}, Options{})
+	require.NoError(t, err)
+	got, err := s.Pick(time.Unix(100, 0))
+	require.NoError(t, err)
+	require.Equal(t, "a", got.ID)
+}
+
+func TestSelectorClampsJitter(t *testing.T) {
+	s, err := NewSelector(testEndpoints(), Options{
+		FailureThreshold: 1,
+		BackoffBase:      time.Second,
+		BackoffMax:       2 * time.Second,
+		Jitter:           func(time.Duration) time.Duration { return 100 * time.Hour },
+	})
+	require.NoError(t, err)
+	now := time.Unix(100, 0)
+	require.NoError(t, s.RecordFailure("a", now))
+	status := s.Snapshot(now.Add(2 * time.Second))
+	var a EndpointStatus
+	for _, item := range status {
+		if item.ID == "a" {
+			a = item
+		}
+	}
+	require.Equal(t, now.Add(2*time.Second), a.RetryAt)
+}
